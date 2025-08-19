@@ -1,31 +1,19 @@
 #!/usr/bin/env node
 
-// app.js for SSNG
-// 2019.04.17
-// access http://localhost:3000/ssng
+// app.js for ssng-node2
+// 2025.08.07
+// access http://localhost:3000
 
 const version = "2025.08.07";
-
-// let dgram = require('dgram');     // for UDP send and receive
-import dgram from 'dgram';
-// let express = require('express');
+import dgram from 'dgram';  // for UDP
 import express from 'express';
-let app = express();
-// const os = require('os');
+const app = express();
 import os from 'os';
-// const fs = require('fs');
 import fs from 'fs';
-// let server = require('http').Server(app);
 import { createServer } from 'http';
 const server = createServer(app);
-console.log("server");
-console.log(server);
-// const WebSocket = require("ws").Server;
-// const wss = new WebSocket({ port: 5001 });
 import { WebSocketServer } from 'ws';
 const wss = new WebSocketServer({ port: 8080 });
-// const wss = new WebSocket({ server });
-
 const port = process.env.PORT || 3000;
 const isIPv6 = false;
 const EL_port = 3610;
@@ -36,7 +24,7 @@ const epcNode = {
     0x80: [0x30],
     0x82: [0x01, 0x0C, 0x01, 0x00],
     0x83: [0xFE, 0x00, 0x00, 0x77, 
-                0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C],
+           0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C],
     0x8A: [0x00, 0x00, 0x77],
     0x9D: [0x02, 0x80, 0xD5],
     0x9E: [0x00],
@@ -62,6 +50,7 @@ const epcDevice = {
 // get local IP address(ipv4)
 const localAddress = getLocalAddress();
 const ipv4 = localAddress.ipv4[0].address
+console.log("ipv4= ", ipv4)
 
 // create a folder "log" to save log files
 fs.readdir('.', function(err, files){
@@ -74,11 +63,10 @@ fs.readdir('.', function(err, files){
 });
 
 server.listen(port, function(){
-  console.log("*** SSNG " + version + ", http://localhost:" + port + " ***");
+  console.log("*** ssng-node2 " + version + ", http://localhost:" + port + " ***");
 });
 
-// location of static files
-// app.use(express.static('html'))
+// location of static files of HTML, CSS and JavaScript
 const __dirname = import.meta.dirname;
 app.use(express.static(__dirname + '/dist'))
 
@@ -257,23 +245,23 @@ function parseEL(uint8Array) {
 
 // Get Local IP Address
 function getLocalAddress() {
-    let ifacesObj = {}
-    ifacesObj.ipv4 = [];
-    ifacesObj.ipv6 = [];
-    let interfaces = os.networkInterfaces();
-    for (let dev in interfaces) {
-        interfaces[dev].forEach(function(details){
-            if (!details.internal){
-                switch(details.family){
-                    case "IPv4":
-                        ifacesObj.ipv4.push({name:dev, address:details.address});
-                    break;
-                    case "IPv6":
-                        ifacesObj.ipv6.push({name:dev, address:details.address})
-                    break;
-                }
-            }
-        });
-    }
-    return ifacesObj;
+  let ifacesObj = {}
+  ifacesObj.ipv4 = [];
+  ifacesObj.ipv6 = [];
+  let interfaces = os.networkInterfaces();
+  for (let dev in interfaces) {
+    interfaces[dev].forEach(function(details){
+      if (!details.internal){
+        switch(details.family){
+          case "IPv4":
+            ifacesObj.ipv4.push({name:dev, address:details.address});
+          break;
+          case "IPv6":
+            ifacesObj.ipv6.push({name:dev, address:details.address})
+          break;
+        }
+      }
+    });
+  }
+  return ifacesObj;
 };
