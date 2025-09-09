@@ -1,15 +1,15 @@
 <script setup>
-const serverURL = "/ssng/";
-let tid = 0;
-let packetId = 0;
-let active_packet_id = "";
-let dataLogArray = [];
-// let analyzedData = "";
+const ServerURL = "/ssng/"; // <string>
+const MultiCastAddress = "224.0.23.0"; // <string> MultiCast Address for ECHONET Lite
+let tid = 0; // <INT> ECHONET Lite の TIDの初期値
+let active_packet_id = ""; // <string> Packet Monitor のアクティブなpacket id
+let dataLogs = [];  // <array[obj]> 送受信したデータを全て保存しておく配列
+// <array[{id:<INT>, timeStamp:<string>, direction:<string> enum:["T", "R"], address:<string>, data:<object>}]
 
 import { ref } from "vue";
 
 const ipServer = ref("");
-const ipData = ref("224.0.23.0");
+const ipData = ref(MultiCastAddress);
 const el = ref({
   deojData: "0x013001",
   esvData: "0x62",
@@ -24,88 +24,87 @@ const epcDataStyle = ref({ color: "black" });
 const edtDataStyle = ref({ color: "black" });
 const freeDataStyle = ref({ color: "black" });
 const rbInputData = ref("el");
-const rbOrder = ref("normalOrder");
-const filters = ref(["showGet", "showInf", "showGetres", "showSNA"]);
-const packet_list = ref([]);
-const packetDetail = ref("placeholder");
+const rbOrder = ref("normal"); //<string> enum["normal", "reverse"]
+const rbFilter = ref("all"); //<string> enum["all", "self", "self+INF"]
+const packets = ref([]); // <array[obj]> ログ表示用の配列
+// <array[{id:<INT>, timeStamp:<string>, direction:<string> enum:["T", "R"], address:<string>, data:<object>, hex:<string>}]
+const packetDetail = ref(""); // <string>
 
+// SEARCH ボタンクリック時の処理 method
 const buttonClickSearch = () => {
-  fButtonClickSearch();
+  const ip = MultiCastAddress;
+  const el = {
+    deojData: "0x0EF001",
+    esvData: "0x62",
+    epcData: "0xD6",
+    edtData: "",
+  };
+  const data = createUint8ArrayFromElData(el);
+  sendData(ip, data);
+  pushDataToLog("T", ip, data);
+  displayLog();
 };
+
+// SEND ボタンクリック時の処理 method
 const buttonClickSend = () => {
-  fButtonClickSend(ipData.value, el.value, freeData.value);
+  ipDataStyle.value.color = "black";
+  if (!checkInputValue("ip", ipData.value)) {
+    ipDataStyle.value.color = "red";
+    window.alert("Check IP address");
+    return;
+  }
+
+  const uint8Array =
+    rbInputData.value == "el"
+      ? createUint8ArrayFromElData(el.value)
+      : createUint8ArrayFromFreeData(freeData.value);
+
+  if (uint8Array.length != 0) {
+    sendData(ipData.value, uint8Array);
+    pushDataToLog("T", ipData.value, uint8Array);
+    displayLog();
+  }
 };
-const updateRbOrder = () => {
-  displayLog();
-};
-const updateFilters = () => {
-  displayLog();
-};
+
+// CLEAR ボタンクリック時の処理 method
 const clearLog = () => {
   packetDetail.value = "";
-  fClearLog();
+  dataLogs.length = 0;
+  packets.value = [];
+  packetDetail.value = "";
 };
-const saveLog = () => {
-  fSaveLog();
-};
-// パケット一覧からパケット行がクリックされたときの処理 (パケット詳細を表示)
-const showPacketDetail = packetMonitorShowPacketDetail.bind(this);
-console.log("bp1");
-// パケット一覧で矢印キーが押されたときの処理
-const upDownList = packetMonitorUpDownList.bind(this);
-console.log("bp2");
-/*
-var vm = new Vue({
-    el: '#app',
-    data: {
-        ipServer: "",
-        ipData: "224.0.23.0",
-        el: {
-            deojData: "0x013001",
-            esvData: "0x62",
-            epcData: "0x80",
-            edtData: "0x30"
-        },
-        freeData: "10,81,00,0A,05,FF,01,01,30,01,62,01,80,00",
-        ipDataStyle: {color: 'black'},
-        deojDataStyle: {color: 'black'},
-        esvDataStyle: {color: 'black'},
-        epcDataStyle: {color: 'black'},
-        edtDataStyle: {color: 'black'},
-        freeDataStyle: {color: 'black'},
-        rbInputData: "el",
-        rbOrder: "normalOrder",
-        filters: ["showGet", "showInf", "showGetres", "showSNA"],
-        packet_list: [],
-        packetDetail: ""
-    },
-    methods: {
-        buttonClickSearch: function () {
-            buttonClickSearch();
-        },
-        buttonClickSend: function () {
-            buttonClickSend(ipData, el, freeData);
-        },
-        updateRbOrder: function () {
-            displayLog();
-        },
-        updateFilters: function () {
-            displayLog();
-        },
-        clearLog: function () {
-            clearLog();
-        },
-        saveLog: function () {
-            saveLog();
-        },
-		// パケット一覧からパケット行がクリックされたときの処理 (パケット詳細を表示)
-		showPacketDetail: packetMonitorShowPacketDetail.bind(this),
-		// パケット一覧で矢印キーが押されたときの処理
-		upDownList: packetMonitorUpDownList.bind(this)
-    }
-});
 
-*/
+// SAVE ボタンクリック時の処理 method
+const saveLog = () => {
+  let saveLogs = "";
+  for (let dataLog of dataLogs) {
+   saveLogs =
+     saveLogs +
+      dataLog.timeStamp +
+      "," +
+      dataLog.direction +
+      "," +
+      dataLog.ip +
+      "," +
+      elFormat(dataLog.data) +
+      "\n";
+  }
+  const message = { log: saveLogs };
+  const request = new XMLHttpRequest();
+  request.open("POST", ServerURL + "saveLog");
+  request.setRequestHeader("Content-type", "application/json");
+  request.send(JSON.stringify(message));
+};
+
+// IP クリック時の処理 method
+const clickIP = () => {
+  ipData.value = MultiCastAddress;
+};
+
+// パケット一覧からパケット行がクリックされたときの処理 method (パケット詳細を表示)
+const onFocus = packetMonitorShowPacketDetail.bind(this);
+// パケット一覧で上下矢印キーが押されたときの処理 method
+const onKeydown = packetMonitorUpDownList.bind(this);
 
 // Show server IP address
 let request = new XMLHttpRequest();
@@ -118,77 +117,113 @@ function reqListener() {
 
 // connect websocket
 console.log("ws://" + document.location.host);
-// let ws = new WebSocket('ws://' + document.location.host);
 const ws = new WebSocket("ws://localhost:8080");
 ws.onopen = function (event) {
   console.log("connected");
 };
 
+// websocketで受信したデータを dataLogs に保存し、ログ表示を更新する
 ws.onmessage = function (event) {
-  console.log("server_to_client", event.data);
+  console.log("ws:server_to_client", event.data);
   const obj = JSON.parse(event.data);
-  if (obj.ip != ipServer.value) {
-    const packet_id = "packet-" + packetId++;
-    const pkt = {
-      id: packet_id,
-      timeStamp: timeStamp(),
-      direction: "R",
-      ip: obj.ip,
-      data: obj.uint8Array,
-    };
-    dataLogArray.push(pkt);
+  if (obj.ip != ipServer.value) { // loop back を排除
+    pushDataToLog(obj.direction, obj.ip, obj.uint8Array);
     displayLog();
   }
 };
 
+// input: none
+// output: none
+// function: Packets Monitorのログ表示を更新する
+// global変数dataLogsからログデータを取り出し、Filterの条件に一致するPacketを表示用配列displayLogsにpushする
+// reverseボタンが選択されている場合は配列displayLogsの要素の順序を逆転する
+// displayLogsの角要素のidを更新（0,1,2,...)
+// displayLogsの中身をログ表示用property packetsに渡す
 function displayLog() {
-  let log = [];
-  for (let dataLog of dataLogArray) {
+  let displayLogs = [];
+  for (let dataLog of dataLogs) {
     const esv = dataLog.data[10];
     const pkt = {
-      id: dataLog.id,
+      id: 0,
       timeStamp: dataLog.timeStamp,
       direction: dataLog.direction,
       address: dataLog.ip,
-      hex: elFormat(dataLog.data),
+      data: dataLog.data, // 詳細表示のための元データ
+      hex: elFormat(dataLog.data), // 表示用の文字列
     };
-    if (dataLog.direction == "T" || filterEsv(esv)) {
-      log.push(pkt);
+    // radio button "self"または"self+INF" が選択されている場合の処理
+    // "Self": TはGet:62, SetI:60, SetC:61, INF:73、 RはGet_Res:72, Set_Res:71, SNA:50, 51, 52
+    // "Self+INF": "self"の条件 + RでINF:73 を追加
+    if (filterLog(rbFilter.value, dataLog.direction, esv)) {
+      displayLogs.push(pkt);
     }
   }
-  if (rbOrder.value == "reverseOrder") {
-    log.reverse();
+
+  // radio button "reverse" が選択されている場合の処理
+  if (rbOrder.value == "reverse") {
+    displayLogs.reverse();
   }
-  packet_list.value = log;
+
+  // id を修正 0 から連続した番号を付加する
+  for (let i = 0; i < displayLogs.length; i++) {
+    displayLogs[i].id = "packet-" + i;
+  }
+
+  // ログ表示用プロパティにログデータを渡す
+  packets.value = displayLogs;
+
   // clear packet selection
   if (active_packet_id) {
-    // $("#" + active_packet_id).removeClass("active");
-    document.querySelector("#" + active_packet_id).classList.remove("active");
+    const element = document.querySelector("#" + active_packet_id);
+    if (element !== null) {
+      element.classList.remove("active");
+    }
     active_packet_id = "";
   }
+
+  // packet detailをクリア
   packetDetail.value = "";
   return;
 
-  function filterEsv(esv) {
-    if (!filters.value.includes("showGet") && esv == 0x62) {
-      return false;
+  // input rb: <string> enum:["all", "self", "self+INF"]
+  // input: direction: <string> enum:["T", "R"]
+  // input: esv: <UINT8>
+  // output: boolean
+  // function: radio button "Self", "Self+INF" が選択された場合 esv でフィルタをかける
+  //   "Self": SSNGが送信した全てのパケットと、それに対応する受信パケット
+  //   "Self+INF": "Self" の内容と、外部デバイスのINFの受信
+  function filterLog(rb, direction, esv) {
+    const esvForT = [0x62, 0x60, 0x61, 0x73];
+    const esvForRSelf = [0x72, 0x71, 0x50, 0x51, 0x52];
+    const esvForRSelfINF = [0x72, 0x71, 0x50, 0x51, 0x52, 0x73];
+    switch(rb) {
+      case "all":
+        return true;
+      case "self":
+        if (direction == "T" && esvForT.includes(esv)) {
+          return true;
+        }
+        if (direction == "R" && esvForRSelf.includes(esv)) {
+          return true;
+        }
+        return false;
+      case "self+INF":
+        if (direction == "T" && esvForT.includes(esv)) {
+          return true;
+        }
+        if (direction == "R" && esvForRSelfINF.includes(esv)) {
+          return true;
+        }
+        return false;
+      default:
+        return false;
     }
-    if (!filters.value.includes("showInf") && esv == 0x73) {
-      return false;
-    }
-    if (!filters.value.includes("showGetres") && (esv == 0x72 || esv == 0x71)) {
-      return false;
-    }
-    if (
-      !filters.value.includes("showSNA") &&
-      (esv == 0x50 || esv == 0x51 || esv == 0x52 || esv == 0x53 || esv == 0x5e)
-    ) {
-      return false;
-    }
-    return true;
   }
 }
 
+// input: none
+// output: <string> ログ用のtime code
+// function: ログ用のtime codeを返す
 function timeStamp() {
   const date = new Date();
   let hour = date.getHours().toString();
@@ -200,17 +235,19 @@ function timeStamp() {
   return hour + ":" + minute + ":" + second;
 }
 
+// input: <array[UINT8]>
+// output: <string> property map
+// function EPC:9D, 9E, 9F のレスポンス(property map)を解析する
 function analyzeData(uint8Array) {
-  console.log("analyzeData1");
-  // uint8Array: [UInt8]
   let analyzedData = "";
   let epcArray = [];
+  const epcsForPropertyMap = [0x9d, 0x9e, 0x9f];
   const esv = uint8Array[10];
   const epc = uint8Array[12];
   const edt = uint8Array.slice(14);
 
   // Decode PropertyMap
-  if (shouldDecodePropertyMap()) {
+  if (esv== 0x72 && epcsForPropertyMap.includes(epc)) {
     if (edt.length < 17) {
       // PropertyMapがEPCの列挙の場合
       for (let i = 1; i < edt.length; i++) {
@@ -233,16 +270,15 @@ function analyzeData(uint8Array) {
       analyzedData += " " + data;
     }
   } else {
-    // return null;
-    return "null";
+    return " ";
   }
-  console.log("analyzeData2:", "analyzedData=", analyzedData);
-  return analyzedData; // analyzedData: string
-  function shouldDecodePropertyMap() {
-    return esv == 0x72 && (epc == 0x9d || epc == 0x9e || epc == 0x9f);
-  }
+  // console.log("analyzeData2:", "analyzedData=", analyzedData);
+  return analyzedData;
 }
 
+// input uin8array: <array[UINT8]>
+// output <string>
+// function: ECHONET Liteのバイナリデータを表示用にスペースを挿入する
 function elFormat(uint8Array) {
   let elString = "";
   for (let value of uint8Array) {
@@ -259,10 +295,11 @@ function elFormat(uint8Array) {
   return elString;
 }
 
-// 数値(number)を16進数表記の文字列に変換する
-// 数値のbyte数は(bytes)
-// example: toStringHex(10, 1) => "0A"
-// example: toStringHex(10, 2) => "000A"
+// input number: <INT8>
+// input bytes: <INT8>
+// output <string>
+// numberを16進数表記の文字列に変換する。bytesでbyte数を指定する。
+// ex. toStringHex(10, 1) => "0A", toStringHex(10, 2) => "000A"
 function toStringHex(number, bytes) {
   let str = number.toString(16).toUpperCase();
   while (str.length < 2 * bytes) {
@@ -271,17 +308,20 @@ function toStringHex(number, bytes) {
   return str;
 }
 
-// stringに文字列を挿入
+// input str: <string> オリジナルの文字列
+// input idx: <INT> 挿入する位置
+// input val: <string> 挿入する文字列
+// output: <string>
+// function: オリジナルの文字列strに、idxで指定した位置に文字列valを挿入する
 function strIns(str, idx, val) {
-  // str:string（元の文字列）, idx:number（挿入する位置）, val:string（挿入する文字列）
   var res = str.slice(0, idx) + val + str.slice(idx);
   return res;
 }
 
-// Check input value of text field
-// argument: inputType:string, enum("ip", "deoj", "esv", "epc", "edt", "free")
-// get text data from text input field of "inputType"
-// return value: boolean
+// input inputType: <string> enum:["ip", "deoj", "esv", "epc", "edt", "free"]
+// input inputValue: <string>
+// output: boolean
+// function: inputValueの値のデータフォーマットをinputTypeに応じてチェックする
 function checkInputValue(inputType, inputValue) {
   console.log(
     "function checkInputValue:",
@@ -318,112 +358,95 @@ function checkInputValue(inputType, inputValue) {
   }
 }
 
-function fButtonClickSend(ipData, el, freeData) {
-  console.log("ipData ", ipData, "el ", el, "freeData", freeData);
-  if (!checkInputValue("ip", ipData)) {
-    ipDataStyle.value.color = "red";
-    window.alert("Check IP address");
-    return false;
-  } else {
-    ipDataStyle.value.color = "black";
-  }
-  let uint8Array = [];
-  // let binaryString = "";
-  uint8Array =
-    rbInputData.value == "el"
-      ? createUint8ArrayFromElData(el)
-      : createUint8ArrayFromFreeData(freeData);
-
-  if (uint8Array !== false) {
-    const message = { ip: ipData, uint8Array: uint8Array };
+// input ip: <string> ex. "224.0.23.0"
+// input data: <array[UINT8]>
+// function: Server APIを利用してUDP送信を実行
+function sendData(ip, data){
+  if (data.length != 0) {
+    const message = { ip: ip, uint8Array: data };
     const request = new XMLHttpRequest();
-    request.open("PUT", serverURL + "send");
+    request.open("PUT", ServerURL + "send");
     request.setRequestHeader("Content-type", "application/json");
     request.send(JSON.stringify(message));
-
-    // push "Sent Data" to LOG
-    const packet_id = "packet-" + packetId++;
-    const pkt = {
-      id: packet_id,
-      timeStamp: timeStamp(),
-      direction: "T",
-      ip: ipData,
-      data: uint8Array,
-    };
-    dataLogArray.push(pkt);
-    displayLog();
   }
 }
 
+// input direction: <string> "enum":["T", "R"]
+// input ip: <string> ex. "224.0.23.0"
+// input data: <array[UINT8]>
+// function: 送受信データをglobal変数のdataLogsにPUSHする
+function pushDataToLog(direction, ip, data){
+  const pkt = {
+    id: 0,
+    timeStamp: timeStamp(),
+    direction: direction,
+    ip: ip,
+    data: data,
+  };
+  dataLogs.push(pkt);
+}
+
+// input el: <object> ex. {deojData: "0x013001", esvData: "0x62", epcData: "0x80", edtData: "0x30"}
+// output array[UINT8] （elのフォーマットがおかしい場合は empty array [] を返す）
+// function: 送信用のECHONET Liteの各要素のデータフォーマットを確認後、送信用に[UINT8]に変換する
 function createUint8ArrayFromElData(el) {
-  console.log("createUint8ArrayFromElData1")
+  let uint8Array = [];
+  deojDataStyle.value.color = "black";
+  esvDataStyle.value.color = "black";
+  epcDataStyle.value.color = "black";
+  edtDataStyle.value.color = "black";
+
   if (!checkInputValue("deoj", el.deojData)) {
     deojDataStyle.value.color = "red";
     window.alert("Check DEOJ");
-    return false;
-  } else {
-    deojDataStyle.value.color = "black";
-  }
+    return uint8Array;
+  } 
   if (!checkInputValue("esv", el.esvData)) {
     esvDataStyle.value.color = "red";
     window.alert("Check ESV");
-    return false;
-  } else {
-    esvDataStyle.value.color = "black";
+    return uint8Array;
   }
   if (!checkInputValue("epc", el.epcData)) {
     epcDataStyle.value.color = "red";
     window.alert("Check EPC");
-    return false;
-  } else {
-    epcDataStyle.value.color = "black";
+    return uint8Array;
   }
   if (!checkInputValue("edt", el.edtData)) {
     edtDataStyle.value.color = "red";
     window.alert("Check EDT");
-    return false;
-  } else {
-    edtDataStyle.value.color = "black";
+    return uint8Array;
   }
-  let uint8Array = [0x10, 0x81]; // EHD
-  tid = tid == 0xffff ? 0 : tid + 1;
+
+  uint8Array.push(0x10, 0x81); // EHD
+  tid = tid == 0xffff ? 0 : tid + 1;  // increment TID
   uint8Array.push(Math.floor(tid / 16), tid % 16); // TID
   uint8Array.push(0x05, 0xff, 0x01); // SEOJ
   for (let data of hex2Array(el.deojData)) {
-    // DEOJ
-    uint8Array.push(data);
+    uint8Array.push(data); // DEOJ
   }
-  uint8Array.push(parseInt(el.esvData, 16)); // ESV
+  const esv = parseInt(el.esvData, 16); 
+  uint8Array.push(esv); // ESV
   uint8Array.push(0x01); // OPC
   uint8Array.push(parseInt(el.epcData, 16)); // EPC
-  const esv = parseInt(el.esvData, 16);
-  if (
-    esv == 0x62 ||
-    esv == 0x63 ||
-    esv == 0x71 ||
-    esv == 0x7a ||
-    esv == 0x7e ||
-    esv == 0x50 ||
-    esv == 0x51 ||
-    esv == 0x52 ||
-    esv == 0x53 ||
-    esv == 0x5e
-  ) {
-    uint8Array.push(0x00); // PDC
+  // const esv = parseInt(el.esvData, 16);
+  const esvs = [0x62,0x63,0x71,0x7a,0x7e,0x50,0x51,0x52,0x53,0x5e];
+  if (esvs.includes(esv)) {
+    uint8Array.push(0x00); // PDC = 0
   } else {
     // EPC= 0x60:SetI, 0x61:SetC, 0x6E:SetGet, 0x72:Get_Res, 0x73:INF, 0x74:INFC,
     const edtArray = hex2Array(el.edtData);
     uint8Array.push(edtArray.length); // PDC
     for (let data of hex2Array(el.edtData)) {
-      // EDT
-      uint8Array.push(data);
+      uint8Array.push(data); // EDT
     }
   }
   return uint8Array;
 }
 
+// input hex:<string> HEX data、先頭に'0x'がついていてもいなくてもOK ex. 0x12...FF or 12...FF
+// output <array[UINT8]> array of byte data
+// function: 文字列表現のHEX dataをBYTEデータの配列に変換する
 function hex2Array(hex) {
-  // hex: string of this format 0xXXXX or XXXX
   if (hex.slice(0, 2) != "0x") {
     hex = "0x" + hex;
   }
@@ -432,140 +455,95 @@ function hex2Array(hex) {
   for (let i = 0; i < bytes; i++) {
     array.push(parseInt(hex.slice((i + 1) * 2, (i + 1) * 2 + 2), 16));
   }
-  return array; // array: array of byte data
+  return array;
 }
 
+// input freeData: <string> ex. "10,81,00,0A,05,FF,01,01,30,01,62,01,9E,00"
+// (データの間に space が入ってもOK)
+// output array[UINT8] （freeDataのフォーマットがおかしい場合は empty array [] を返す）
+// function: 入力文字列を[UINT8]に変換する
 function createUint8ArrayFromFreeData(freeData) {
-  if (!checkInputValue("free", freeData)) {
-    // console.log("freeData.valueStyle.color: ", freeData.valueStyle.color);
-    freeData.valueStyle.color = "red";
-    window.alert("Check Free data");
-    return false;
-  } else {
-    freeData.valueStyle.color = "black";
-  }
   let uint8Array = [];
-  let arrayFromFreeData = freeData.split(",");
+  if (!checkInputValue("free", freeData)) {
+    freeDataStyle.value.color = "red";
+    window.alert("Check Free data");
+    return uint8Array;
+  } else {
+    freeDataStyle.value.color = "black";
+  }
+  const arrayFromFreeData = freeData.split(",");
   for (let value of arrayFromFreeData) {
     uint8Array.push(parseInt(value.trim(), 16));
   }
   return uint8Array;
 }
 
-function fButtonClickSearch() {
-  console.log("fButtonClickSearch");
-  const ipData = "224.0.23.0";
-  const el = {
-    deojData: "0x0EF001",
-    esvData: "0x62",
-    epcData: "0xD6",
-    edtData: "",
-  };
-  const freeData = "10,81,00,04,05,FF,01,0E,F0,01,62,01,D6,00";
-  fButtonClickSend(ipData, el, freeData);
-}
-
-function fSaveLog() {
-  let log = "";
-  for (let dataLog of dataLogArray) {
-    log =
-      log +
-      dataLog.timeStamp +
-      "," +
-      dataLog.direction +
-      "," +
-      dataLog.ip +
-      "," +
-      elFormat(dataLog.data) +
-      "\n";
-  }
-  const message = { log: log };
-  const request = new XMLHttpRequest();
-  request.open("POST", serverURL + "saveLog");
-  request.setRequestHeader("Content-type", "application/json");
-  request.send(JSON.stringify(message));
-}
-
-function fClearLog() {
-  packetId = 0;
-  dataLogArray.length = 0;
-  packet_list.value = [];
-  packetDetail.value = "";
-  console.log("function fClearLog");
-}
-
+// function: Packets Monitor 画面のある行が選択された場合の処理
 function packetMonitorShowPacketDetail(event) {
-  console.log("packetMonitorShowPacketDetail1");
+  // 行のハイライトを削除: remove "active"
   if (active_packet_id) {
-    // $("#" + active_packet_id).removeClass("active");
-    document.querySelector("#" + active_packet_id).classList.remove("active");
-    active_packet_id = "";
+    const element = document.querySelector("#" + active_packet_id);
+    if (element !== null) {
+      element.classList.remove("active");
+    }
   }
-  let t = event.target;
-  console.log("t.id: ", t.id);
-  // $("#" + t.id).addClass("active");
-  document.querySelector("#" + t.id).classList.add("active");
-  active_packet_id = t.id;
 
-  // 現在選択中のパケット ID
-  let id_parts = active_packet_id.split("-");
-  let pno = parseInt(id_parts[1], 10);
+  // 選択された行をハイライト: add "active"
+  active_packet_id = event.target.id;
+  const element = document.querySelector("#" + active_packet_id);
+  if (element !== null) {
+    element.classList.add("active");
+  }
+
+  // 現在選択中のパケットIDを抽出
+  const id_parts = active_packet_id.split("-");
+  const pno = parseInt(id_parts[1], 10);
 
   // packetの解析結果の表示
-  console.log("packetMonitorShowPacketDetail2");
-  packetDetail.value = analyzeData(dataLogArray[pno].data);
-  console.log("packetMonitorShowPacketDetail3", " packetDetail.value=", packetDetail.value);
+  packetDetail.value = analyzeData(packets.value[pno].data);
 }
 
+// input: none
+// output: none
+// function: 上下の矢印キーが押された時の処理
+// ハイライト行がある場合は、ハイライトを上下させる
 function packetMonitorUpDownList(event) {
-  console.log("packetMonitorUpDownList")
   event.preventDefault();
   event.stopPropagation();
+
   // 選択中のパケット行がなければ終了
   if (!active_packet_id) {
     return;
   }
-  // 現在選択中のパケット ID
+
+  // 現在選択中のパケット行番号を抽出
   let id_parts = active_packet_id.split("-");
   let pno = parseInt(id_parts[1], 10);
 
+  // パケット行番号を修正
   let c = event.keyCode;
   let k = event.key;
-  if (c === 38 || k === "ArrowUp") {
-    // 上矢印キー
-    if (rbOrder.value == "normalOrder") {
-      if (pno-- < 0) {
-        pno = 0;
-      }
-    } else {
-      if (pno++ >= dataLogArray.length) {
-        pno = dataLogArray.length - 1;
-      }
+  if (c === 38 || k === "ArrowUp") { // 上矢印キー
+    if (--pno < 0) {
+      pno = 0;
     }
-  } else if (c === 40 || k === "ArrowDown") {
-    // 下矢印キー
-    if (rbOrder.value == "normalOrder") {
-      if (pno++ >= dataLogArray.length) {
-        pno = dataLogArray.length - 1;
-      }
-    } else {
-      if (pno-- < 0) {
-        pno = 0;
-      }
-    }
+  } else if (c === 40 || k === "ArrowDown") { // 下矢印キー
+    ++pno
   } else {
     return;
   }
-  // 遷移したパケット行にフォーカスする
-  // $("#packet-" + pno).focus();
-  document.querySelector("#packet-" + pno).focus();
+
+  // 遷移したパケット行にフォーカスする。elementがnullの場合は下へ行き過ぎなので１行戻る。
+  const element = document.querySelector("#packet-" + pno);
+  if (element === null) {
+    --pno;
+  } else {
+    element.focus();
+  }
 }
 </script>
 
 <template>
-  <!--
-<div class="container" id="app">
--->
   <div class="container">
     <div class="card mb-3">
       <!-- ECHONET Lite Packets -->
@@ -573,13 +551,12 @@ function packetMonitorUpDownList(event) {
       <div class="card-header py-1">
         <div class="row">
           <div class="col-auto h5 mt-2">ECHONET Lite Packets</div>
-          <!--                 <div class="col-auto mt-2" id="ipv4" ></div> -->
           <div class="col-auto mt-2">{{ ipServer }}</div>
           <div class="col"></div>
           <div class="col-auto">
             <div class="input-group">
               <div class="onput-group-prepend">
-                <span class="input-group-text">IP</span>
+                <span class="input-group-text" v-on:click="clickIP">IP</span>
               </div>
               <input
                 type="text"
@@ -698,89 +675,85 @@ function packetMonitorUpDownList(event) {
           <div class="col-auto h5 mt-2">Packets Monitor</div>
           <div class="col"></div>
 
-          <div class="col-auto pl-0">
-            <div class="input-group border ml-2">
-              <span class="input-group-text">Order</span>
-              <!-- radio button "Normal" -->
-              <div class="form-check form-check-inline mt-2">
-                <input
-                  type="radio"
-                  class="form-check-input"
-                  id="normalOrder"
-                  v-model="rbOrder"
-                  value="normalOrder"
-                  v-on:change="updateRbOrder"
-                />
-                <label for="normalOrder" class="form-check-label">Normal</label>
-              </div>
-
-              <div class="form-check form-check-inline mt-2">
-                <input
-                  type="radio"
-                  class="form-check-input"
-                  id="reverseOrder"
-                  v-model="rbOrder"
-                  value="reverseOrder"
-                  v-on:change="updateRbOrder"
-                />
-                <label for="reverseOrder" class="form-check-label"
-                  >Reverse</label
-                >
-              </div>
-            </div>
-          </div>
-
-          <div class="col-auto pl-0">
+          <div class="col-auto">
             <div class="input-group border">
-              <div class="input-group-text">Filter</div>
-              <div class="form-check form-check-inline mt-2">
-                <input
-                  type="checkbox"
-                  class="form-check-input"
-                  id="showGet"
-                  value="showGet"
-                  v-model="filters"
-                  v-on:change="updateFilters"
-                />
-                <label class="form-check-label" for="showGet">GET</label>
-              </div>
-              <div class="form-check form-check-inline mt-2">
-                <input
-                  type="checkbox"
-                  class="form-check-input"
-                  id="showInf"
-                  value="showInf"
-                  v-model="filters"
-                  v-on:change="updateFilters"
-                />
-                <label class="form-check-label" for="showInf">INF</label>
-              </div>
-              <div class="form-check form-check-inline mt-2">
-                <input
-                  type="checkbox"
-                  class="form-check-input"
-                  id="showGetres"
-                  value="showGetres"
-                  v-model="filters"
-                  v-on:change="updateFilters"
-                />
-                <label class="form-check-label" for="showGetres">GET_RES</label>
-              </div>
-              <div class="form-check form-check-inline mt-2">
-                <input
-                  type="checkbox"
-                  class="form-check-input"
-                  id="showSNA"
-                  value="showSNA"
-                  v-model="filters"
-                  v-on:change="updateFilters"
-                />
-                <label class="form-check-label" for="showSNA">SNA</label>
-              </div>
+              <span class="input-group-text">Order</span>
+                <!-- radio button "Normal" -->
+                <div class="form-check form-check-inline mt-2 ms-2">
+                  <input
+                    type="radio"
+                    class="form-check-input"
+                    id="normal"
+                    v-model="rbOrder"
+                    value="normal"
+                    v-on:change="displayLog"
+                    checked
+                  />
+                  <label for="normal" class="form-check-label">Normal</label>
+                </div>
+                <!-- radio button "Reverse" -->
+                <div class="form-check form-check-inline mt-2">
+                  <input
+                    type="radio"
+                    class="form-check-input"
+                    id="reverse"
+                    v-model="rbOrder"
+                    value="reverse"
+                    v-on:change="displayLog"
+                  />
+                  <label for="reverse" class="form-check-label"
+                    >Reverse</label
+                  >
+                </div>
             </div>
           </div>
 
-          <div class="col-auto mt-1 pl-0">
+          <div class="col-auto">
+            <div class="input-group border">
+              <span class="input-group-text">Filter</span>
+              <!-- radio button "All" -->
+              <div class="form-check form-check-inline mt-2 ms-2">
+                <input
+                  type="radio"
+                  class="form-check-input"
+                  id="filterAll"
+                  v-model="rbFilter"
+                  value="all"
+                  v-on:change="displayLog"
+                  checked
+                />
+                <label for="filterAll" class="form-check-label">All</label>
+              </div>
+
+              <!-- radio button "Self" -->
+              <div class="form-check form-check-inline mt-2">
+                <input
+                  type="radio"
+                  class="form-check-input"
+                  id="filterSelf"
+                  v-model="rbFilter"
+                  value="self"
+                  v-on:change="displayLog"
+                />
+                <label for="filterSelf" class="form-check-label">Self</label>
+              </div>
+
+              <!-- radio button "Self+INF" -->
+              <div class="form-check form-check-inline mt-2">
+                <input
+                  type="radio"
+                  class="form-check-input"
+                  id="filterSelfPlusINF"
+                  v-model="rbFilter"
+                  value="self+INF"
+                  v-on:change="displayLog"
+                />
+                <label for="filterSelfINF" class="form-check-label">Self+INF</label>
+              </div>
+
+            </div>
+          </div>
+          <div class="col-auto mt-1">
             <button
               type="button"
               class="btn btn-secondary me-2 btn-sm"
@@ -808,6 +781,7 @@ function packetMonitorUpDownList(event) {
             v-on:keyup.stop
             v-on:keydown.stop
           >
+            <!-- Line-1 Label "HH MM SS T/R IP DATA" -->
             <li class="list-group-item" id="packet-monitor-header" tabindex="0">
               <span class="col1">HH MM SS</span>
               <span class="col2">T/R</span>
@@ -815,12 +789,13 @@ function packetMonitorUpDownList(event) {
               <span class="col4">DATA</span>
             </li>
             <li
-              v-for="packet in packet_list"
+              v-for="packet in packets"
               class="list-group-item"
+              v-bind:key="packet.id"
               v-bind:id="packet.id"
               tabindex="0"
-              v-on:focus="showPacketDetail"
-              v-on:keydown="upDownList"
+              v-on:focus="onFocus"
+              v-on:keydown="onKeydown"
             >
               <span class="col1">{{ packet.timeStamp }}</span>
               <span class="col2">{{ packet.direction }}</span>
@@ -830,7 +805,6 @@ function packetMonitorUpDownList(event) {
           </ul>
         </div>
         <div id="packet-detail-wrapper">
-          <!-- <packet-detail>{{ packetDetail }}</packet-detail> -->
           <span>{{ packetDetail }}</span>
         </div>
       </div>

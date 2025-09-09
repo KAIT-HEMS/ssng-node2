@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
 // app.js for ssng-node2
-// 2025.08.07
+// 2025.09.09
 // access http://localhost:3000
 
-const version = "2025.08.07";
+const version = "v2.0.0";
 import dgram from 'dgram';  // for UDP
 import express from 'express';
 const app = express();
@@ -62,6 +62,7 @@ fs.readdir('.', function(err, files){
     }
 });
 
+// web server 起動
 server.listen(port, function(){
   console.log("*** ssng-node2 " + version + ", http://localhost:" + port + " ***");
 });
@@ -112,7 +113,7 @@ wss.on("connection", ws => {
     });
 });
 
-// UDP: receive
+// UDP受信時の処理
 var sock = dgram.createSocket(isIPv6 ? "udp6" : "udp4", function (msg, rinfo) {
     console.log("UDP receive: \n\trinfo= ", rinfo, "\n\tmsg= ", msg, );
     const ip = rinfo.address;
@@ -121,15 +122,13 @@ var sock = dgram.createSocket(isIPv6 ? "udp6" : "udp4", function (msg, rinfo) {
       uint8Array.push(msg.readUInt8(i));
     }
     // websocket: push to client(web browser)
-    wss.clients.forEach((client) => {
-        client.send(JSON.stringify({"ip":ip, "uint8Array":uint8Array}), (error) => {
-            if(error) {
-                console.log('Failed to send a message on the WebSocket channel.', error);
-            }
-        });
-    });
-    // process EL GET command and reply GET_RES
-    elGet(ip, uint8Array);
+    sendLogToClient(ip, uint8Array, "R");
+
+    // 受信データがELパケットで、GETコマンドの場合の処理
+    const elPacket = parseEL(uint8Array);
+    if ((elPacket != null) && (elPacket.esv == 0x62)){
+      elGet(ip, uint8Array);
+    }
 });
 
 // UDP: setting for multicast
@@ -138,19 +137,39 @@ sock.bind( EL_port, function() {
 	console.log( "port bind OK!" );
 });
 
-// Send INF (EPC=0xD5)
-const multicastAddress = isIPv6 ? EL_multiAdr6 : EL_multiAdr4;
-const instanceList = [0x10, 0x81, 0x00, 0x0a, 0x0e, 0xf0, 0x01, 0x0e, 0xf0, 0x01, 0x73, 0x01, 0xd5, 0x04, 0x01, 0x05, 0xff, 0x01];
-sendUdp(multicastAddress, instanceList);
+// コントローラ起動時の処理
+// Send INF (EPC=0xD5) to MULTICAST address
+const ip = isIPv6 ? EL_multiAdr6 : EL_multiAdr4;
+const byteArray = [0x10, 0x81, 0x00, 0x0a, 0x0e, 0xf0, 0x01, 0x0e, 0xf0, 0x01, 0x73, 0x01, 0xd5, 0x04, 0x01, 0x05, 0xff, 0x01];
+sendUdp(ip, byteArray);
 
-function sendUdp(ip, byteArray) {   // string:ip, array:byteArray
-  const buffer = new Buffer(byteArray);
+// input ip: <string>
+// input uint8Array: <array[UINT8]>
+// input direction: <string> enum:["T", "R"]
+function sendLogToClient(ip, uint8Array, direction){
+  wss.clients.forEach((client) => {
+    client.send(JSON.stringify({"ip":ip, "uint8Array":uint8Array, "direction":direction }), (error) => {
+      if(error) {
+        console.log('Failed to send a message on the WebSocket channel.', error);
+      }
+    });
+  });    
+}
+
+// input ip: <string>
+// input array: <array[UNIT8]>
+// function: UDPでデータを送信する
+function sendUdp(ip, byteArray) {
+  const buffer = new Buffer.from(byteArray);
 	let client = dgram.createSocket(isIPv6 ? "udp6" : "udp4");
 	client.send( buffer, EL_port, ip, function(err, bytes) {
 		client.close();
 	});
 }
 
+// input data: <string>
+// output: none
+// function: 入力された文字列をファイルとして保存する
 function saveLog(data) {  // string:data
   const date = new Date();
   let year = date.getFullYear();
@@ -164,33 +183,32 @@ function saveLog(data) {  // string:data
   hour = (hour.length == 1) ? ("0" + hour) : hour;
   minute = (minute.length == 1) ? ("0" + minute) : minute;
   second = (second.length == 1) ? ("0" + second) : second;
-  filename = "ssngLog_" + year + month + day + hour + minute + second  + ".txt";
-  
-  const buffer = new Buffer(data);
+  const filename = "ssngLog_" + year + month + day + hour + minute + second  + ".txt";
+  const buffer = new Buffer.from(data);
   fs.writeFile("log/"+filename, buffer, (err) => {
     if (err) console.log("Error: Can not save a log file.");
-    console.log('The file has been saved!');
+    console.log('A log file was saved!');
   });
 }
 
-function elGet(ip, uint8Array) {  // string:ip, array: uint8Array
-  // console.log("elGet ip= ", ip, "uint8Array= ", uint8Array);
+// input ip: <string>
+// input uint8Array: <array[UINT8]>
+// function: GET コマンドを受信した場合の処理
+// DEOJに応じて、ノードまたはコントローラのEPCの値(EDT)をUDPで送信する
+function elGet(ip, uint8Array) {
   const elPacket = parseEL(uint8Array);
-  if (elPacket !== null) {
-    const deoj = elPacket.deoj[0] * 256 + elPacket.deoj[1];
-    if (( deoj == 0x05FF) && (elPacket.esv == 0x62)) { // controller and Get
-      const uint8ArraySend = createUint8ArraySend(elPacket, epcDevice);
-      // console.log("elGet ip= ", ip, "uint8ArraySend= ", uint8ArraySend);
-      sendUdp(ip, uint8ArraySend);
-    }
-    else if ((deoj == 0x0EF0) && (elPacket.esv == 0x62)) {  // node and Get
-      const uint8ArraySend = createUint8ArraySend(elPacket, epcNode);
-      // console.log("elGet ip= ", ip, "uint8ArraySend= ", uint8ArraySend);
-      sendUdp(ip, uint8ArraySend);
-    }
-  }   
+  const deoj = elPacket.deoj[0] * 256 + elPacket.deoj[1];
+  if ((deoj == 0x0EF0) || (deoj == 0x05FF)) {
+    const uint8ArraySend = (deoj == 0x0EF0) ? createUint8ArraySend(elPacket, epcNode) : createUint8ArraySend(elPacket, epcDevice);
+    sendUdp(ip, uint8ArraySend);
+    sendLogToClient(ip, uint8ArraySend, "T");
+  }
 }
 
+// input elPacket:　<object>
+// input epcs: <array[<string>]>
+// output: <array[UINT8]>
+// function: 入力データから、ELで送信用のバイト列を作成する
 function createUint8ArraySend(elPacket, epcs) {
   let uint8ArraySend = [0x10, 0x81, 0x00, 0x00, 0x0e, 0xf0, 0x01, 0x0e, 0xf0, 0x01, 0x72, 0x01, 0x80, 0x00];
   uint8ArraySend[2] = elPacket.tid[0];  // tid
@@ -215,6 +233,12 @@ function createUint8ArraySend(elPacket, epcs) {
   return uint8ArraySend;
 }
 
+// input uint8Array: <array[UINT8]> 
+// ex. [0x10, 0x81, 0x00, 0x00, 0x05, 0xff, 0x01, 0x0e, 0xf0, 0x01, 0x62, 0x01, 0x80, 0x00]
+// output: <object> or null
+// {ehd:[], tid:[], seoj:[], deoj:[], esv:<UNIT8>, opc:<UINT8>, epc:<UINT8>, pdc:<UINT8>, edt:[]}
+// null: 入力データがEL packetではない場合（14bytes未満または EHD != 0x1081）
+// function: バイトデータからELの各要素(EHD,TID...)をkeyとするオブジェクトを作成する
 function parseEL(uint8Array) {
   let elr = {};
   if (uint8Array.length < 14) {
@@ -243,7 +267,9 @@ function parseEL(uint8Array) {
   return elr;
 }
 
-// Get Local IP Address
+// input: none
+// output: <object> {ipv4:{name:<string>, address:<string>}, ipv6:{name:<string>, address:<string>}}
+// function: Get Local IP Address
 function getLocalAddress() {
   let ifacesObj = {}
   ifacesObj.ipv4 = [];
