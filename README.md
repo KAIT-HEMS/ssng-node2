@@ -5,7 +5,7 @@
 Date| Version | Description
 :---|:---|:---|
 2018.07.17|1.0.0|First official release
-2025.09.02|2.0.0|Refactoring for dev environment updates
+2025.09.09|2.0.0|Refactoring for dev environment updates
 
 ## Abstract
 
@@ -44,7 +44,6 @@ Date| Version | Description
 3. GUI of SSNG is displayed (Fig. 1)  
 
 ![gui1](graphics4readme/g1.png "gui1")
-<div style="text-align: center;">Fig.1 GUI of SSNG</div>
 
 ## How to use
 
@@ -78,7 +77,7 @@ Date| Version | Description
 
 - IP, DEOJ, ESV, EPC, EDT を入力する
   - ESVが 0x62 (GET) の場合、SSNGはEDTに入力された値を無視する
-  - EDTが２バイト以上の場合は、0xAA33FF のような値を入力する
+  - EDTが２バイト以上の場合は、値を 0xAA33FF のような形式で入力する
 - SEND ボタンをクリックする
 
 `English`
@@ -156,7 +155,7 @@ Date| Version | Description
 
 `Japanese`
 
-- Packets Monitor の Self ボタンをクリックすると、SSNGが送信したパケットと、そのレスポンスパケットのみ表示される
+- Packets Monitor の Self ボタンをクリックすると、SSNGが送信したパケットと、そのレスポンスパケットのみ表示する
 
 `English`
 
@@ -168,7 +167,7 @@ Date| Version | Description
 
 `Japanese`
 
-- Packets Monitor の Self+INFボタンをクリックすると、Selfボタンのデータおよび受信したINFパケットのみ表示される
+- Packets Monitor の Self+INFボタンをクリックすると、Selfボタンのデータおよび受信したINFパケットのみ表示する
 
 `English`
 
@@ -180,7 +179,7 @@ Date| Version | Description
 
 `Japanese`
 
-- Packets Monitor の Clear ボタンをクリックすると、Packets Monitorがクリアされる
+- Packets Monitor の Clear ボタンをクリックすると、Packets Monitorの表示をクリアする
 
 `English`
 
@@ -192,17 +191,17 @@ Date| Version | Description
 
 `Japanese`
 
-- Packets Monitor の SAVE ボタンをクリックすると、ログデータがファイルとして"log"フォルダに保存される
+- Packets Monitor の SAVE ボタンをクリックすると、ログデータを"log"フォルダに保存する
 
 `English`
 
-- In case SAVE button at the Packets Monitor is clicked, log data is saved as a file at the "log" folder.
+- In case SAVE button at the Packets Monitor is clicked, log data is saved in the "log" folder.
 
 ## 開発関連情報
 
 ### Background of this version
 
-Filter の仕様を変更しようとしたところ、Node.jsのバージョンアップによる変更点や、フロントエンドのフレームワークであるVue.jsのバージョンが2から3になったことに伴うAPI仕様の変更（Options APIからComposition API）などがあり、本格的なリファクタリングとなった。今回のバージョンを 2.0.0 とする。
+Filter の仕様を変更しようとしたところ、Node.jsのバージョンアップによるmodule仕様の変更や、フロントエンドのフレームワークであるVue.jsのバージョンが2から3になったことに伴うAPI仕様の変更（Options APIからComposition API）などがあり、本格的なリファクタリングが必要となった。今回のバージョンを 2.0.0 とする。
 
 ### 依存モジュール
 
@@ -228,12 +227,11 @@ Filter の仕様を変更しようとしたところ、Node.jsのバージョン
 
 - Node.js のアプリケーション
 - Web server機能
-  - クライアントからのアクセス用にRESTでAPIを提供
+  - クライアントへサービス（UDPの送信依頼）機能をRESTのAPIで提供
   - クライアントのWebアプリをホストするため
 - ECHONET Lite のコントローラ機能（UDPの送受信など）
 - ログファイルの保存機能
 - ローカルPCのIP address取得
-- クライアントからのアクセス用にRESTでAPIを提供
 - Web socketを使って、ECHONET Liteの送受信データをクライアントにPUSH送信する
 
 #### クライアント
@@ -288,8 +286,7 @@ npm i
 3. フロントエンド（クライアント）アプリのソース修正
 
 - src/Ssng.2vue を修正する
-- "$ npm run build" を実行する
+- ターミナルで "npm run build" を実行する
   - dist directoryに html, css, js fileが作成される
-- "$ npm start" でプログラム起動
-- ブラウザで localhost:3000 をアクセスする
-- 動作確認する
+- ターミナルで "npm start" を実行するとプログラムが起動する
+- ブラウザで localhost:3000 をアクセスするとUIが表示される
