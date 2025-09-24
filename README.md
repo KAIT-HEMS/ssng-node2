@@ -5,7 +5,7 @@
 Date| Version | Description
 :---|:---|:---|
 2018.07.17|1.0.0|First official release
-2025.09.09|2.0.0|Refactoring for dev environment updates
+2025.09.09|2.0.0|- Refactoring for dev environment updates</br>- Fixed a bug "received packets of SET_RES is not displayed at Packts Monitor"</br>- Modified options of a filter function.
 
 ## Abstract
 
