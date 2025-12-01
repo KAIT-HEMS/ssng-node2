@@ -1,4 +1,4 @@
-# SSNG for Node.js
+# Readme: SSNG for Node.js
 
 ## Revision history
 
@@ -24,11 +24,13 @@ Date| Version | Description
 
 1. プログラムのファイルを適当なフォルダにコピーする
 2. ターミナルを起動、上記のフォルダーに移動し、"npm i" を実行する
+3. "npm run build" を実行する
 
 `English`
 
 1. Copy program files to an appropriate folder
 2. Launch a terminal program, move to the folder and execute "npm i".
+3. Execute "npm run build".
 
 ## Launch
 
